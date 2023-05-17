@@ -21,6 +21,7 @@
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 static void *find_fit(size_t asize);
+static void *next_fit(size_t asize);
 static void place(void *bp, size_t asize);
 void mm_free(void *bp);
 
@@ -75,6 +76,7 @@ team_t team = {
 #define NEXT_BLKP(bp) ((char*)(bp) + GET_SIZE(((char*)(bp)-WSIZE))) // 그 다음 블록의 bp 위치로 이동한다.(bp에서 해당 블록의 크기만큼 이동 -> 그 다음 블록의 헤더 뒤로 감.)
 #define PREV_BLKP(bp) ((char*)(bp) - GET_SIZE(((char*)(bp) - DSIZE))) // 그 전 블록의 bp위치로 이동.(이전 블록 footer로 이동하면 그 전 블록의 사이즈를 알 수 있으니 그만큼 그 전으로 이동.)
 static char *heap_listp;  // 처음에 쓸 큰 가용블록 힙을 만들어줌.
+static char *last_possible; 
 /* 
  * mm_init - initialize the malloc package.
  */
@@ -91,7 +93,7 @@ int mm_init(void)
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL)
         return -1;
-
+    last_possible = heap_listp;
     return 0;
 }
 
@@ -99,6 +101,7 @@ int mm_init(void)
  * mm_malloc - Allocate a block by incrementing the brk pointer.
  *     Always allocate a block whose size is a multiple of the alignment.
  */
+
 void *mm_malloc(size_t size) // 동적할당 함수 구현하기
 {
     size_t asize;                   // 정렬조건에 만족하는 값을 저장할 변수
@@ -113,16 +116,20 @@ void *mm_malloc(size_t size) // 동적할당 함수 구현하기
     else {                          // size가 DSIZE를 초과하면
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);         // 블록 크기를 계산해(공식임) 블록 크기를 설정
     }
-    if ((bp = find_fit(asize)) != NULL) {              // 할당 가능한 메모리 블록 찾기(요청된 크기에 맞는 블록)가 성공하면,
+
+    if ((bp = next_fit(asize)) != NULL) {              // 할당 가능한 메모리 블록 찾기(요청된 크기에 맞는 블록)가 성공하면,
         place(bp, asize);                              // 블록을 할당하고
         return bp;                                     // 해당 블록의 포인터를 반환
     }
+
     extendsize = MAX(asize,CHUNKSIZE);  // asize랑 CHUNKSIZE 중에 큰 값을 저장하고
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL) // 확장할 수 있는 장소가 없을 경우
         return NULL; // 널 리턴
+
     place(bp, asize); // 확장한 블록을 할당하고,
     return bp; // 해당 블록의 포인터를 반환
 }
+
 static void *find_fit(size_t asize)
 {
     void *bp; // 공간을 찾을 포인터 변수 선언
@@ -136,10 +143,17 @@ static void *find_fit(size_t asize)
 
 static void *next_fit(size_t asize)
 {
-    void *bp; // 공간을 찾을 포인터 변수 선언
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) { // heap_listp부터 모든 블록을 순회, 블록 크기가 0인 블록은 힙의 끝을 나타냄
+    void *bp = last_possible; // 공간을 찾을 포인터 변수 선언
+    
+    for (bp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+            return bp; 
+        }
+    }
+
+    for (bp = heap_listp; bp < last_possible ; bp = NEXT_BLKP(bp)) { // heap_listp부터 모든 블록을 순회, 블록 크기가 0인 블록은 힙의 끝을 나타냄
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) { // 블록이 할당되지 않았고, 요청된 크기보다 크거나 같은 크기의 블록이라면
-            return bp; // 해당 블록의 포인터를 반환 
+            return bp; 
         }
     }
     return NULL; // 할당 가능한 블록이 없을 경우 NULL 반환
@@ -183,6 +197,7 @@ static void *extend_heap(size_t words){
     /* Coalesce if the previous block was free */
     return coalesce(bp);
 }
+
 static void place(void *bp, size_t asize)
 {
     size_t csize = GET_SIZE(HDRP(bp)); // 현재 블록의 크기 저장
@@ -197,6 +212,7 @@ static void place(void *bp, size_t asize)
         PUT(HDRP(bp), PACK(csize, 1)); // 그냥 다 써라
         PUT(FTRP(bp), PACK(csize, 1)); // 너 다 해라
     }
+    last_possible = bp;
 }
 
 void mm_free(void *bp)
@@ -235,6 +251,7 @@ static void *coalesce(void *bp)
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
     }
+    last_possible = bp;
     return bp; 
 }
 
