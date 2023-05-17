@@ -237,19 +237,27 @@ void *mm_realloc(void *ptr, size_t size)
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
-    
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
-
-    // copySize = *(size_t *) ((char *)oldptr - SIZE_T_SIZE); // 원래 들어있던 코드 틀림
     copySize = GET_SIZE(HDRP(oldptr));
+    if (size == 0) {
+        mm_free(ptr);
+        return NULL;
+    }
 
-    if (size < copySize) {// oldptr 사이즈가 새로 만들 newptr의 size보다 더 작은 경우
+    if (oldptr == NULL) {
+        return mm_malloc(size);
+    }
+
+    newptr = mm_malloc(size);
+
+    if (newptr == NULL){
+      return NULL;
+    }
+    
+    if (size < copySize) { 
       copySize = size;
     }
-    //memcpy(destination, source, num)
-    memcpy(newptr, oldptr, copySize); // newptr 위치에 oldptr 주소로부터 copySize 만큼 복사하기 
+  
+    memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
     return newptr;
 }
